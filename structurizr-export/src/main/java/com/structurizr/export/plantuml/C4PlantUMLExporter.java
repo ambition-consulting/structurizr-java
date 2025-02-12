@@ -659,8 +659,20 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
             // Deployment_Node(alias, label, ?type, ?descr, ?sprite, ?tags, ?link)
             writer.writeLine(
                     String.format("Deployment_Node(%s, \"%s\", $type=\"%s\", $descr=\"%s\", $tags=\"%s\", $link=\"%s\")",
-                        idOf(infrastructureNode), name, technology, description, tagsOf(view, elementToWrite), url)
-            );
+                    idOf(infrastructureNode), name, technology, description, tagsOf(view, elementToWrite), url));
+        } else if (element instanceof CustomElement) {
+            String shape = "";
+
+            if (elementStyle.getShape() == Shape.Cylinder) {
+                shape = "Db";
+            } else if (elementStyle.getShape() == Shape.Pipe) {
+                shape = "Queue";
+            }
+
+            // Component(alias, label, ?techn, ?descr, ?sprite, ?tags, ?link)
+            writer.writeLine(
+                String.format("Component%s(%s, \"%s\", $techn=\"%s\", $descr=\"%s\", $tags=\"%s\", $link=\"%s\")",
+                    shape, id, name, "", description, tagsOf(view, elementToWrite), url));
         }
 
         if (!isVisible(view, elementToWrite)) {
@@ -690,11 +702,8 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
         Element source = relationship.getSource();
         Element destination = relationship.getDestination();
 
-        if (source instanceof CustomElement || destination instanceof CustomElement) {
-            return;
-        }
-
-        if (Boolean.TRUE.toString().equalsIgnoreCase(getViewOrViewSetProperty(view, C4PLANTUML_RELATIONSHIP_PROPERTIES_PROPERTY, Boolean.FALSE.toString()))) {
+        if (Boolean.TRUE.toString().equalsIgnoreCase(
+            getViewOrViewSetProperty(view, C4PLANTUML_RELATIONSHIP_PROPERTIES_PROPERTY, Boolean.FALSE.toString()))) {
             addProperties(view, writer, relationship);
         }
 
@@ -714,6 +723,16 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
         }
 
         description += (hasValue(relationshipView.getDescription()) ? relationshipView.getDescription() : hasValue(relationshipView.getRelationship().getDescription()) ? relationshipView.getRelationship().getDescription() : "");
+
+        if (view instanceof DynamicView && "JVM".equals(relationship.getTechnology())) {
+            final int spaceIndex = description.indexOf(" ");
+            System.out.println("Extracting method name from " + description);
+            description = spaceIndex > -1 ? description.substring(spaceIndex + 1) : description;
+            System.out.println("Reduced to " + description);
+            final int parenthesisIndex = description.indexOf("(");
+            description = parenthesisIndex > -1 ? description.substring(0, parenthesisIndex) : description;
+            System.out.println("Reduced to " + description);
+        }
 
         String technology = relationship.getTechnology();
         if (StringUtils.isNullOrEmpty(technology)) {
