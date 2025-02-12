@@ -295,7 +295,7 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
 
         String color = "#cccccc";
         int borderThickness = 1;
-//        String icon = "";
+        //        String icon = "";
 
         ElementStyle elementStyleForGroup = view.getViewSet().getConfiguration().getStyles().findElementStyle("Group:" + group);
         ElementStyle elementStyleForAllGroups = view.getViewSet().getConfiguration().getStyles().findElementStyle("Group");
@@ -434,20 +434,50 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
             IndentingWriter writer = new IndentingWriter();
             writeHeader(view, writer);
 
-            boolean elementsWritten = false;
+            boolean elementWasWritten = false;
 
             Set<Element> elements = new LinkedHashSet<>();
             for (RelationshipView relationshipView : view.getRelationships()) {
                 elements.add(relationshipView.getRelationship().getSource());
-                elements.add(relationshipView.getRelationship().getDestination());
+                if (!(relationshipView.getRelationship().getDestination() instanceof StaticStructureElement)) {
+                    elements.add(relationshipView.getRelationship().getDestination());
+                }
             }
+            for (RelationshipView relationshipView : view.getRelationships()) {
+                if ((relationshipView.getRelationship().getDestination() instanceof StaticStructureElement)) {
+                    elements.add(relationshipView.getRelationship().getDestination());
+                }
+            }
+
+            Set<String> elementsWritten = new LinkedHashSet<>();
 
             for (Element element : elements) {
+                boolean writeElement = true;
+                if (element instanceof CustomElement) {
+                    int nameIndex = element.getName().indexOf("@");
+                    if (nameIndex > -1) {
+                        String className = element.getName().substring(0, nameIndex);
+                        if (elementsWritten.contains(className)) {
+                            writeElement = false;
+                        } else {
+                            String url = element.getUrl();
+                            if (url != null) {
+                                int indexLine = url.indexOf("#");
+                                if (indexLine > 1) {
+                                    element.setUrl(url.substring(0, indexLine));
+                                }
+                            }
+                            elementsWritten.add(className);
+                        }
+                    }
+                }
+                if (writeElement) {
                 writeElement(view, element, writer);
-                elementsWritten = true;
+                    elementWasWritten = true;
+                }
             }
 
-            if (elementsWritten) {
+            if (elementWasWritten) {
                 writer.writeLine();
             }
 
@@ -461,10 +491,68 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
     }
 
     @Override
-    protected void writeElement(ModelView view, Element element, IndentingWriter writer) {
-        if (element instanceof CustomElement) {
+    protected void writeRelationships(ModelView view, IndentingWriter writer) {
+        if (!(view instanceof DynamicView)) {
+            super.writeRelationships(view, writer);
             return;
         }
+        Collection<RelationshipView> relationshipList = view.getRelationships();
+        Iterator<RelationshipView> iterator = relationshipList.iterator();
+        if (!iterator.hasNext()) {
+            return;
+        }
+        Stack<RelationshipView> stack = new Stack<>();
+        RelationshipView relationshipView = iterator.next();
+        do {
+            if (stack.isEmpty() || currentSourceIsPreviousDestination(relationshipView, stack.peek())) {
+                activate(relationshipView, writer);
+                stack.push(relationshipView);
+            } else {
+                stack.pop();
+                stack.push(relationshipView);
+            }
+            writeRelationship(view, relationshipView, writer);
+            relationshipView = iterator.hasNext() ? iterator.next() : null;
+            while (!stack.isEmpty() && !currentSourceIsPreviousDestination(relationshipView, stack.peek())
+                && !currentSourceIsPreviousSource(relationshipView, stack.peek())) {
+                deactivate(stack.pop(), writer);
+                // deactivate(relationshipView, stack.pop(), writer);
+            }
+        } while (relationshipView != null);
+    }
+
+    private static boolean currentSourceIsPreviousDestination(RelationshipView now, RelationshipView before) {
+        return now != null && now.getRelationship().getSource().equals(before.getRelationship().getDestination());
+    }
+
+    private static boolean currentSourceIsPreviousSource(RelationshipView now, RelationshipView before) {
+        return now != null && now.getRelationship().getSource().equals(before.getRelationship().getSource());
+    }
+
+    private void activate(RelationshipView relationshipView, IndentingWriter writer) {
+        Element element = relationshipView.getRelationship().getSource();
+        int nameIndex = element.getName().indexOf("@");
+        if (!(element instanceof CustomElement) || nameIndex == -1) {
+            return;
+        }
+        writer.writeLine(String.format("activate %s", id(element)));
+    }
+
+    private void deactivate(RelationshipView relationshipView, IndentingWriter writer) {
+        if (relationshipView == null || !(relationshipView.getRelationship().getSource() instanceof CustomElement)) {
+            return;
+        }
+
+        final String description = relationshipView.getDescription();
+        System.out.println("Extracting return value from " + description);
+        final int spaceIndex = description.indexOf(" ");
+        final String returnValue = spaceIndex > -1 ? description.substring(0, spaceIndex) : description;
+        System.out.println("Reduced to " + returnValue);
+        writer.writeLine(String.format("return %s", returnValue));
+    }
+
+    @Override
+    protected void writeElement(ModelView view, Element element, IndentingWriter writer) {
 
         Element elementToWrite = element;
         ElementStyle elementStyle = view.getViewSet().getConfiguration().getStyles().findElementStyle(element);
@@ -491,7 +579,15 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
             }
         }
 
-        String name = element.getName();
+        int nameIndex = element.getName().indexOf("@");
+        String name;
+
+        if (nameIndex > -1) {
+            name = element.getName().substring(0, nameIndex);
+        } else {
+            name = element.getName();
+        }
+
         String description = element.getDescription();
 
         if (StringUtils.isNullOrEmpty(description)) {
@@ -675,7 +771,8 @@ public class C4PlantUMLExporter extends AbstractPlantUMLExporter {
     }
 
     protected boolean renderAsSequenceDiagram(ModelView view) {
-        return view instanceof DynamicView && "true".equalsIgnoreCase(getViewOrViewSetProperty(view, PLANTUML_SEQUENCE_DIAGRAM_PROPERTY, "false"));
+        return view instanceof DynamicView && "true".equalsIgnoreCase(
+            getViewOrViewSetProperty(view, PLANTUML_SEQUENCE_DIAGRAM_PROPERTY, "false"));
     }
 
 }

@@ -108,7 +108,7 @@ public abstract class AbstractPlantUMLExporter extends AbstractDiagramExporter {
         return id(modelItem);
     }
 
-    private String id(ModelItem modelItem) {
+    protected String id(ModelItem modelItem) {
         if (modelItem instanceof Person) {
             return id((Person)modelItem);
         } else  if (modelItem instanceof SoftwareSystem) {
